@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql, initDb } from "@/server/db";
+import { db } from "@/server/db";
 
 export const runtime = "nodejs";
 
@@ -10,13 +10,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Missing userId" }, { status: 400 });
     }
 
-    await initDb();
-    const { rows } = await sql`
-      SELECT code, initial_cost, current_amount, last_settlement_date 
-      FROM funds 
-      WHERE user_id = ${userId} 
-      ORDER BY id ASC
-    `;
+    await db.init();
+    const rows = await db.query<{
+      code: string;
+      initial_cost: number;
+      current_amount: number;
+      last_settlement_date: string | null;
+    }>('SELECT code, initial_cost, current_amount, last_settlement_date FROM funds WHERE user_id = ? ORDER BY id ASC', [userId]);
 
     const funds = rows.map((row) => ({
       code: row.code,
@@ -59,16 +59,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await initDb();
+    await db.init();
     const createdAt = new Date().toISOString();
-    await sql`
-      INSERT INTO funds (user_id, code, initial_cost, current_amount, last_settlement_date, created_at)
-      VALUES (${userId}, ${code}, ${initialCost}, ${currentAmount}, ${lastSettlementDate}, ${createdAt})
-      ON CONFLICT(user_id, code) DO UPDATE SET
-        initial_cost = EXCLUDED.initial_cost,
-        current_amount = EXCLUDED.current_amount,
-        last_settlement_date = EXCLUDED.last_settlement_date
-    `;
+    await db.run(
+      `INSERT INTO funds (user_id, code, initial_cost, current_amount, last_settlement_date, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, code) DO UPDATE SET
+         initial_cost = EXCLUDED.initial_cost,
+         current_amount = EXCLUDED.current_amount,
+         last_settlement_date = EXCLUDED.last_settlement_date`,
+      [userId, code, initialCost, currentAmount, lastSettlementDate, createdAt]
+    );
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -93,18 +94,17 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    await initDb();
+    await db.init();
     
     // 构建动态 SQL 更新语句
     let query = `UPDATE funds SET `;
     const params: any[] = [];
-    let paramIndex = 1;
     let hasUpdates = false;
     
     if (body?.initialCost !== undefined) {
       const initialCost = Number(body.initialCost);
       if (Number.isFinite(initialCost)) {
-        query += `initial_cost = $${paramIndex++}, `;
+        query += `initial_cost = ?, `;
         params.push(initialCost);
         hasUpdates = true;
       }
@@ -113,7 +113,7 @@ export async function PATCH(request: NextRequest) {
     if (body?.currentAmount !== undefined) {
       const currentAmount = Number(body.currentAmount);
       if (Number.isFinite(currentAmount)) {
-        query += `current_amount = $${paramIndex++}, `;
+        query += `current_amount = ?, `;
         params.push(currentAmount);
         hasUpdates = true;
       }
@@ -121,7 +121,7 @@ export async function PATCH(request: NextRequest) {
     
     if (body?.lastSettlementDate !== undefined) {
       const lastSettlementDate = typeof body.lastSettlementDate === 'string' ? body.lastSettlementDate : null;
-      query += `last_settlement_date = $${paramIndex++}, `;
+      query += `last_settlement_date = ?, `;
       params.push(lastSettlementDate);
       hasUpdates = true;
     }
@@ -134,10 +134,10 @@ export async function PATCH(request: NextRequest) {
     }
     
     query = query.slice(0, -2); // 移除最后的 ", "
-    query += ` WHERE user_id = $${paramIndex++} AND code = $${paramIndex}`;
+    query += ` WHERE user_id = ? AND code = ?`;
     params.push(userId, code);
     
-    await sql.query(query, params);
+    await db.run(query, params);
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -160,10 +160,12 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    await initDb();
+    await db.init();
     
-    await sql`DELETE FROM history WHERE user_id = ${userId} AND fund_code = ${code}`;
-    await sql`DELETE FROM funds WHERE user_id = ${userId} AND code = ${code}`;
+    await db.transaction(async () => {
+      await db.run('DELETE FROM history WHERE user_id = ? AND fund_code = ?', [userId, code]);
+      await db.run('DELETE FROM funds WHERE user_id = ? AND code = ?', [userId, code]);
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
