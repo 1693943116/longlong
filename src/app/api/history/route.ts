@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/server/db';
+import { sql, initDb } from '@/server/db';
 
 export const runtime = 'nodejs';
 
@@ -14,10 +14,13 @@ export async function GET(request: NextRequest) {
 
     const date = request.nextUrl.searchParams.get('date') || getToday();
 
-    const db = getDb();
-    const rows = db
-      .prepare('SELECT fund_code, time, value, change FROM history WHERE user_id = ? AND date = ? ORDER BY id ASC')
-      .all(userId, date) as Array<{ fund_code: string; time: string; value: number; change: number }>;
+    await initDb();
+    const { rows } = await sql`
+      SELECT fund_code, time, value, change 
+      FROM history 
+      WHERE user_id = ${userId} AND date = ${date} 
+      ORDER BY id ASC
+    `;
 
     const data: Record<string, Array<{ time: string; value: string; change: string }>> = {};
 
@@ -51,24 +54,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing or invalid history data' }, { status: 400 });
     }
 
-    const db = getDb();
-    db.prepare(`
+    await initDb();
+    const createdAt = new Date().toISOString();
+    
+    await sql`
       INSERT INTO history (user_id, fund_code, date, time, value, change, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      VALUES (${userId}, ${fundCode}, ${date}, ${time}, ${value}, ${change}, ${createdAt})
       ON CONFLICT(user_id, fund_code, date, time) DO UPDATE SET
-        value = excluded.value,
-        change = excluded.change
-    `).run(userId, fundCode, date, time, value, change, new Date().toISOString());
+        value = EXCLUDED.value,
+        change = EXCLUDED.change
+    `;
 
-    db.prepare(`
+    // PostgreSQL 使用子查询删除旧数据，保留最近 50 条
+    await sql`
       DELETE FROM history
       WHERE id IN (
         SELECT id FROM history
-        WHERE user_id = ? AND fund_code = ? AND date = ?
+        WHERE user_id = ${userId} AND fund_code = ${fundCode} AND date = ${date}
         ORDER BY id DESC
-        LIMIT -1 OFFSET 50
+        OFFSET 50
       )
-    `).run(userId, fundCode, date);
+    `;
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -85,11 +91,12 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
     }
 
-    const db = getDb();
+    await initDb();
+    
     if (date) {
-      db.prepare('DELETE FROM history WHERE user_id = ? AND date = ?').run(userId, date);
+      await sql`DELETE FROM history WHERE user_id = ${userId} AND date = ${date}`;
     } else {
-      db.prepare('DELETE FROM history WHERE user_id = ?').run(userId);
+      await sql`DELETE FROM history WHERE user_id = ${userId}`;
     }
 
     return NextResponse.json({ success: true });

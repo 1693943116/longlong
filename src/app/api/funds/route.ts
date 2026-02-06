@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/server/db";
+import { sql, initDb } from "@/server/db";
 
 export const runtime = "nodejs";
 
@@ -10,17 +10,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Missing userId" }, { status: 400 });
     }
 
-    const db = getDb();
-    const rows = db
-      .prepare(
-        "SELECT code, initial_cost, current_amount, last_settlement_date FROM funds WHERE user_id = ? ORDER BY id ASC",
-      )
-      .all(userId) as Array<{
-        code: string;
-        initial_cost: number;
-        current_amount: number;
-        last_settlement_date: string | null;
-      }>;
+    await initDb();
+    const { rows } = await sql`
+      SELECT code, initial_cost, current_amount, last_settlement_date 
+      FROM funds 
+      WHERE user_id = ${userId} 
+      ORDER BY id ASC
+    `;
 
     const funds = rows.map((row) => ({
       code: row.code,
@@ -63,24 +59,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const db = getDb();
-    db.prepare(
-      `
+    await initDb();
+    const createdAt = new Date().toISOString();
+    await sql`
       INSERT INTO funds (user_id, code, initial_cost, current_amount, last_settlement_date, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      VALUES (${userId}, ${code}, ${initialCost}, ${currentAmount}, ${lastSettlementDate}, ${createdAt})
       ON CONFLICT(user_id, code) DO UPDATE SET
-        initial_cost = excluded.initial_cost,
-        current_amount = excluded.current_amount,
-        last_settlement_date = excluded.last_settlement_date
-    `,
-    ).run(
-      userId,
-      code,
-      initialCost,
-      currentAmount,
-      lastSettlementDate,
-      new Date().toISOString(),
-    );
+        initial_cost = EXCLUDED.initial_cost,
+        current_amount = EXCLUDED.current_amount,
+        last_settlement_date = EXCLUDED.last_settlement_date
+    `;
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -105,45 +93,51 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const updates: string[] = [];
-    const values: Array<string | number | null> = [];
-
+    await initDb();
+    
+    // 构建动态 SQL 更新语句
+    let query = `UPDATE funds SET `;
+    const params: any[] = [];
+    let paramIndex = 1;
+    let hasUpdates = false;
+    
     if (body?.initialCost !== undefined) {
       const initialCost = Number(body.initialCost);
       if (Number.isFinite(initialCost)) {
-        updates.push("initial_cost = ?");
-        values.push(initialCost);
+        query += `initial_cost = $${paramIndex++}, `;
+        params.push(initialCost);
+        hasUpdates = true;
       }
     }
-
+    
     if (body?.currentAmount !== undefined) {
       const currentAmount = Number(body.currentAmount);
       if (Number.isFinite(currentAmount)) {
-        updates.push("current_amount = ?");
-        values.push(currentAmount);
+        query += `current_amount = $${paramIndex++}, `;
+        params.push(currentAmount);
+        hasUpdates = true;
       }
     }
-
+    
     if (body?.lastSettlementDate !== undefined) {
-      const lastSettlementDate =
-        typeof body.lastSettlementDate === "string"
-          ? body.lastSettlementDate
-          : null;
-      updates.push("last_settlement_date = ?");
-      values.push(lastSettlementDate);
+      const lastSettlementDate = typeof body.lastSettlementDate === 'string' ? body.lastSettlementDate : null;
+      query += `last_settlement_date = $${paramIndex++}, `;
+      params.push(lastSettlementDate);
+      hasUpdates = true;
     }
-
-    if (updates.length === 0) {
+    
+    if (!hasUpdates) {
       return NextResponse.json(
         { error: "No valid fields to update" },
         { status: 400 },
       );
     }
-
-    const db = getDb();
-    db.prepare(
-      `UPDATE funds SET ${updates.join(", ")} WHERE user_id = ? AND code = ?`,
-    ).run(...values, userId, code);
+    
+    query = query.slice(0, -2); // 移除最后的 ", "
+    query += ` WHERE user_id = $${paramIndex++} AND code = $${paramIndex}`;
+    params.push(userId, code);
+    
+    await sql.query(query, params);
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -166,19 +160,10 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const db = getDb();
-    const transaction = db.transaction(() => {
-      db.prepare("DELETE FROM history WHERE user_id = ? AND fund_code = ?").run(
-        userId,
-        code,
-      );
-      db.prepare("DELETE FROM funds WHERE user_id = ? AND code = ?").run(
-        userId,
-        code,
-      );
-    });
-
-    transaction();
+    await initDb();
+    
+    await sql`DELETE FROM history WHERE user_id = ${userId} AND fund_code = ${code}`;
+    await sql`DELETE FROM funds WHERE user_id = ${userId} AND code = ${code}`;
 
     return NextResponse.json({ success: true });
   } catch (error) {
