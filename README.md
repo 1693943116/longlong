@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 基金管理系统
 
-## Getting Started
+一个简单的基金管理应用，使用浏览器 localStorage 存储数据。
 
-First, run the development server:
+## ✨ 特性
+
+- 📊 多用户管理
+- 💰 基金持仓跟踪
+- 📈 实时数据更新（每30秒）
+- 📉 历史数据图表
+- 💾 数据存储在浏览器本地（无需数据库）
+
+## 🚀 部署到 Vercel
+
+直接部署即可，无需配置数据库！
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# 提交代码
+git add .
+git commit -m "feat: 使用 localStorage 存储数据"
+git push
+
+# 或者在 Vercel 中导入仓库
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🛠️ 本地开发
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# 安装依赖
+pnpm install
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# 启动开发服务器
+pnpm dev
 
-## Learn More
+# 构建
+pnpm build
+```
 
-To learn more about Next.js, take a look at the following resources:
+## 📝 数据存储
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+所有数据存储在浏览器的 localStorage 中：
+- 用户数据
+- 基金持仓
+- 历史数据
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**注意**：清除浏览器数据会导致数据丢失。
 
-## Deploy on Vercel
+## 🔧 技术栈
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Next.js 16
+- React 19
+- TypeScript
+- TailwindCSS
+- Recharts（图表）

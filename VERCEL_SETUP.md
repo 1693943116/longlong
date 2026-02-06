@@ -1,12 +1,28 @@
 # Vercel Postgres 部署指南
 
-## 已完成的迁移
+## ✅ 已完成的迁移（更新版）
 
-✅ 已将 SQLite（better-sqlite3）迁移到 Vercel Postgres
-✅ 所有 API 路由已更新以使用 PostgreSQL
-✅ 构建通过验证
+- ✅ 混合数据库方案：本地 SQLite + Vercel PostgreSQL
+- ✅ 自动检测环境并切换数据库
+- ✅ SQL 占位符自动转换（`?` → `$1, $2, $3`）
+- ✅ PostgreSQL 兼容的 SQL 语法
+- ✅ 所有 API 路由已更新
+- ✅ 构建通过验证
 
-## 在 Vercel 部署步骤
+## 🎯 工作原理
+
+### 自动数据库切换
+```
+本地开发 (没有 POSTGRES_URL) → SQLite
+Vercel 部署 (有 POSTGRES_URL) → PostgreSQL
+```
+
+### SQL 语法自动转换
+- 使用统一的 `?` 占位符编写 SQL
+- PostgreSQL 环境自动转换为 `$1, $2, $3`
+- SQLite 环境保持 `?` 不变
+
+## 📦 在 Vercel 部署步骤
 
 ### 1. 创建 Vercel Postgres 数据库
 
@@ -18,37 +34,29 @@
 6. 选择区域（建议选择离你最近的区域）
 7. 点击 **Create**
 
-### 2. 连接数据库到项目
-
-创建数据库后，Vercel 会自动添加以下环境变量到你的项目：
-
-- `POSTGRES_URL`
-- `POSTGRES_PRISMA_URL`
-- `POSTGRES_URL_NON_POOLING`
-- `POSTGRES_USER`
-- `POSTGRES_HOST`
-- `POSTGRES_PASSWORD`
-- `POSTGRES_DATABASE`
-
-**不需要手动配置！** `@vercel/postgres` 会自动使用这些环境变量。
-
-### 3. 部署项目
+### 2. 部署项目
 
 ```bash
 git add .
-git commit -m "feat: 迁移到 Vercel Postgres"
+git commit -m "fix: 修复 PostgreSQL 占位符转换和 SQL 兼容性"
 git push
 ```
 
 推送后，Vercel 会自动部署。数据库表会在第一次 API 调用时自动创建。
 
-### 4. 验证部署
+### 3. 验证部署
 
-部署完成后：
+1. 等待 Vercel 部署完成
+2. 访问你的项目 URL
+3. 测试创建用户 API
+4. 检查 Vercel Dashboard > Deployments > Functions 日志
 
-1. 访问你的项目 URL
-2. 尝试创建用户
-3. 检查是否成功（不再报 500 错误）
+如果看到以下日志，说明 PostgreSQL 工作正常：
+```
+[DB] 使用数据库: PostgreSQL
+[DB] PostgreSQL 数据库初始化成功
+[DB] PG Run: INSERT INTO users (id, name, created_at) VALUES ($1, $2, $3)
+```
 
 ## 本地开发配置（可选）
 

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import FundDetail from '@/components/FundDetail';
 import { Fund, FundData, HistoryPoint, User } from '@/types/fund';
+import { storage } from '@/utils/storage';
 
 export default function Home() {
   const [users, setUsers] = useState<User[]>([]);
@@ -23,11 +24,10 @@ export default function Home() {
 
   const loadUsers = useCallback(async () => {
     try {
-      const res = await fetch('/api/users');
-      const list = await res.json();
-      const safeList = Array.isArray(list) ? list : [];
-      setUsers(safeList);
-      setCurrentUser(prev => prev ?? (safeList[0] ?? null));
+      const list = storage.getUsers();
+      setUsers(list);
+      const saved = storage.getCurrentUser();
+      setCurrentUser(prev => prev ?? saved ?? (list[0] ?? null));
     } catch (error) {
       console.error('加载用户失败:', error);
     }
@@ -35,9 +35,8 @@ export default function Home() {
 
   const loadFunds = useCallback(async (userId: string) => {
     try {
-      const res = await fetch(`/api/funds?userId=${userId}`);
-      const list = await res.json();
-      setFunds(Array.isArray(list) ? list : []);
+      const list = storage.getFunds(userId);
+      setFunds(list);
     } catch (error) {
       console.error('加载基金失败:', error);
       setFunds([]);
@@ -46,9 +45,8 @@ export default function Home() {
 
   const loadHistory = useCallback(async (userId: string) => {
     try {
-      const res = await fetch(`/api/history?userId=${userId}`);
-      const payload = await res.json();
-      setHistoryData(payload.data || {});
+      const data = storage.getHistory(userId);
+      setHistoryData(data);
     } catch (error) {
       console.error('加载历史数据失败:', error);
       setHistoryData({});
@@ -63,6 +61,7 @@ export default function Home() {
   // 切换用户时加载数据
   useEffect(() => {
     if (currentUser) {
+      storage.setCurrentUser(currentUser);
       setFundData({});
       loadFunds(currentUser.id);
       loadHistory(currentUser.id);
@@ -78,18 +77,11 @@ export default function Home() {
     if (!newUserName.trim()) return;
 
     try {
-      const res = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newUserName.trim() })
-      });
-      const newUser = await res.json();
-      if (newUser?.id) {
-        setUsers(prev => [...prev, newUser]);
-        setCurrentUser(newUser);
-        setNewUserName('');
-        setShowUserModal(false);
-      }
+      const newUser = storage.addUser(newUserName.trim());
+      setUsers(prev => [...prev, newUser]);
+      setCurrentUser(newUser);
+      setNewUserName('');
+      setShowUserModal(false);
     } catch (error) {
       console.error('添加用户失败:', error);
     }
@@ -103,17 +95,7 @@ export default function Home() {
   const createFund = async (fund: Fund) => {
     if (!currentUser) return;
     try {
-      await fetch('/api/funds', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: currentUser.id,
-          code: fund.code,
-          initialCost: fund.initialCost,
-          currentAmount: fund.currentAmount,
-          lastSettlementDate: fund.lastSettlementDate ?? null
-        })
-      });
+      storage.addFund(currentUser.id, fund);
     } catch (error) {
       console.error('保存基金失败:', error);
     }
@@ -122,17 +104,7 @@ export default function Home() {
   const updateFund = async (fundCode: string, updates: Partial<Fund>) => {
     if (!currentUser) return;
     try {
-      await fetch('/api/funds', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: currentUser.id,
-          code: fundCode,
-          ...(updates.initialCost !== undefined ? { initialCost: updates.initialCost } : {}),
-          ...(updates.currentAmount !== undefined ? { currentAmount: updates.currentAmount } : {}),
-          ...(updates.lastSettlementDate !== undefined ? { lastSettlementDate: updates.lastSettlementDate } : {})
-        })
-      });
+      storage.updateFund(currentUser.id, fundCode, updates);
     } catch (error) {
       console.error('更新基金失败:', error);
     }
@@ -141,7 +113,7 @@ export default function Home() {
   const deleteFund = async (fundCode: string) => {
     if (!currentUser) return;
     try {
-      await fetch(`/api/funds?userId=${currentUser.id}&code=${fundCode}`, { method: 'DELETE' });
+      storage.deleteFund(currentUser.id, fundCode);
     } catch (error) {
       console.error('删除基金失败:', error);
     }
@@ -150,17 +122,8 @@ export default function Home() {
   const saveHistoryPoint = async (fundCode: string, point: HistoryPoint) => {
     if (!currentUser) return;
     try {
-      await fetch('/api/history', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: currentUser.id,
-          fundCode,
-          time: point.time,
-          value: parseFloat(point.value),
-          change: parseFloat(point.change)
-        })
-      });
+      const today = new Date().toISOString().split('T')[0];
+      storage.saveHistoryPoint(currentUser.id, fundCode, today, point);
     } catch (error) {
       console.error('保存历史数据失败:', error);
     }
@@ -171,7 +134,7 @@ export default function Home() {
     if (!confirm('确定要删除此用户及其所有基金数据吗？')) return;
 
     try {
-      await fetch(`/api/users?id=${userId}`, { method: 'DELETE' });
+      storage.deleteUser(userId);
       setUsers(prev => prev.filter(u => u.id !== userId));
 
       if (currentUser?.id === userId) {
