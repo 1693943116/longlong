@@ -66,17 +66,33 @@ export async function POST(request: NextRequest) {
       [userId, fundCode, date, time, value, change, createdAt]
     );
 
-    // 删除超过 50 条的历史记录
-    await db.run(
-      `DELETE FROM history
-       WHERE id IN (
-         SELECT id FROM history
+    // 删除超过 50 条的历史记录（保留最新的 50 条）
+    if (db.usePostgres) {
+      // PostgreSQL 语法
+      await db.run(
+        `DELETE FROM history
          WHERE user_id = ? AND fund_code = ? AND date = ?
-         ORDER BY id DESC
-         LIMIT -1 OFFSET 50
-       )`,
-      [userId, fundCode, date]
-    );
+         AND id NOT IN (
+           SELECT id FROM history
+           WHERE user_id = ? AND fund_code = ? AND date = ?
+           ORDER BY id DESC
+           LIMIT 50
+         )`,
+        [userId, fundCode, date, userId, fundCode, date]
+      );
+    } else {
+      // SQLite 语法
+      await db.run(
+        `DELETE FROM history
+         WHERE id IN (
+           SELECT id FROM history
+           WHERE user_id = ? AND fund_code = ? AND date = ?
+           ORDER BY id DESC
+           LIMIT -1 OFFSET 50
+         )`,
+        [userId, fundCode, date]
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

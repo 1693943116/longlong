@@ -110,6 +110,12 @@ const initPostgres = async () => {
   return pgSql;
 };
 
+// 将 ? 占位符转换为 $1, $2, $3 (PostgreSQL)
+const convertPlaceholders = (sql: string): string => {
+  let index = 1;
+  return sql.replace(/\?/g, () => `$${index++}`);
+};
+
 // 统一的数据库接口
 export const db = {
   usePostgres: isVercel || hasPostgres,
@@ -126,7 +132,9 @@ export const db = {
   async query<T = any>(sqlStr: string, params: any[] = []): Promise<T[]> {
     if (this.usePostgres) {
       const pg = await initPostgres();
-      const result = await pg.query(sqlStr, params);
+      const pgSql = convertPlaceholders(sqlStr);
+      console.log('[DB] PG Query:', pgSql, params);
+      const result = await pg.query(pgSql, params);
       return result.rows;
     } else {
       const sqlite = initSqlite();
@@ -139,7 +147,9 @@ export const db = {
   async get<T = any>(sqlStr: string, params: any[] = []): Promise<T | null> {
     if (this.usePostgres) {
       const pg = await initPostgres();
-      const result = await pg.query(sqlStr, params);
+      const pgSql = convertPlaceholders(sqlStr);
+      console.log('[DB] PG Get:', pgSql, params);
+      const result = await pg.query(pgSql, params);
       return result.rows[0] || null;
     } else {
       const sqlite = initSqlite();
@@ -152,7 +162,9 @@ export const db = {
   async run(sqlStr: string, params: any[] = []): Promise<void> {
     if (this.usePostgres) {
       const pg = await initPostgres();
-      await pg.query(sqlStr, params);
+      const pgSql = convertPlaceholders(sqlStr);
+      console.log('[DB] PG Run:', pgSql, params);
+      await pg.query(pgSql, params);
     } else {
       const sqlite = initSqlite();
       const stmt = sqlite.prepare(sqlStr);
